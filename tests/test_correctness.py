@@ -1,6 +1,7 @@
 import unittest
 from functools import partial
 
+import scipy.sparse as sp
 from scipy.spatial.distance import pdist, squareform
 
 import openTSNE
@@ -292,11 +293,29 @@ class TestTSNECorrectnessUsingPrecomputedDistanceMatrix(unittest.TestCase):
         x = datasets.load_iris().data
         x += np.random.normal(0, 1e-3, x.shape)  # iris contains duplicate rows
 
+        # We run this for only a few iterations since this will check for
+        # correctness. If we let it run for longer, this test fails. The reason
+        # it fails is that slight differences (e.g. 16th decimal) in the
+        # distance matrices produce slightly different P matrices (detectable at
+        # precision 18 decimals), which compounds during optimization, resulting
+        # in slightly different embeddings (visually indistinguishable). If the
+        # computation was, however, wrong, we would see a difference after only
+        # a few iterations. Early exaggeration appears to have a much stronger
+        # effect on this compounting, so we disable it here.
+        # See also: https://github.com/pavlin-policar/openTSNE/issues/247
         distances = squareform(pdist(x))
-        params = dict(initialization="random", random_state=0)
+        params = dict(
+            early_exaggeration_iter=0,
+            n_iter=500,
+            initialization="random",
+            random_state=0,
+        )
         embedding1 = TSNE(metric="precomputed", **params).fit(distances)
         embedding2 = TSNE(metric="euclidean", **params).fit(x)
 
+        self.assertTrue(
+            sp.linalg.norm(embedding1.affinities.P - embedding2.affinities.P) < 1e-16
+        )
         np.testing.assert_almost_equal(embedding1, embedding2)
 
 
